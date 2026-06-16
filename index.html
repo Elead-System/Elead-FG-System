@@ -130,16 +130,29 @@
 
       <!-- Step 1: Camera / Upload -->
       <div id="honda-step1" class="">
+
+        <!-- Live Camera View -->
+        <div id="honda-camera-box" class="hidden mb-3 relative rounded-xl overflow-hidden bg-black" style="aspect-ratio:4/3">
+          <video id="honda-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+          <button onclick="hondaCapturePhoto()" class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-white text-[#0f172a] font-bold px-6 py-2 rounded-full text-sm shadow-lg active:scale-95 transition-transform">
+            📸 ถ่าย
+          </button>
+          <button onclick="hondaStopCamera()" class="absolute top-2 right-2 bg-[#ef4444] text-white text-xs px-2 py-1 rounded-full font-bold">✕</button>
+        </div>
+
+        <!-- Preview after capture -->
         <div id="honda-preview-box" class="hidden mb-3 relative">
           <img id="honda-preview-img" class="w-full rounded-lg border border-[#e0e7ff] max-h-48 object-contain bg-[#f8fafc]" src="" alt="preview">
           <button onclick="hondaClearPhoto()" class="absolute top-2 right-2 bg-[#ef4444] text-white text-xs px-2 py-0.5 rounded-full font-bold">✕ ล้าง</button>
         </div>
+        <canvas id="honda-canvas" class="hidden"></canvas>
+
         <div id="honda-ocr-status" class="hidden mb-3 text-xs text-center text-[#64748b] font-medium py-2 bg-[#f8fafc] rounded-lg">กำลังอ่านข้อความ...</div>
+
         <div class="grid grid-cols-2 gap-2 mb-3">
-          <label class="flex items-center justify-center gap-2 bg-[#f59e0b] hover:bg-[#d97706] text-white font-bold py-3 rounded-xl cursor-pointer text-sm transition-colors">
-            <span>📷</span> ถ่ายรูป
-            <input type="file" accept="image/*" capture="environment" class="hidden" onchange="hondaHandlePhoto(this)">
-          </label>
+          <button onclick="hondaStartCamera()" class="flex items-center justify-center gap-2 bg-[#f59e0b] hover:bg-[#d97706] text-white font-bold py-3 rounded-xl text-sm transition-colors">
+            <span>📷</span> เปิดกล้อง
+          </button>
           <label class="flex items-center justify-center gap-2 bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold py-3 rounded-xl cursor-pointer text-sm transition-colors">
             <span>🖼</span> เลือกรูป
             <input type="file" accept="image/*" class="hidden" onchange="hondaHandlePhoto(this)">
@@ -720,7 +733,49 @@ var hondaMapping = {
 };
 
 // Honda state
-var hondaOcrPart = null, hondaOcrQty = null;
+var hondaCameraStream = null;
+
+function hondaStartCamera() {
+  var camBox = document.getElementById('honda-camera-box');
+  var video  = document.getElementById('honda-video');
+  camBox.classList.remove('hidden');
+  document.getElementById('honda-preview-box').classList.add('hidden');
+  document.getElementById('honda-ocr-result').classList.add('hidden');
+
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+    .then(function(stream) {
+      hondaCameraStream = stream;
+      video.srcObject = stream;
+    })
+    .catch(function(err) {
+      camBox.classList.add('hidden');
+      showToast('ไม่สามารถเปิดกล้องได้: ' + err.message, 'error');
+      console.error('Camera error:', err);
+    });
+}
+
+function hondaStopCamera() {
+  if (hondaCameraStream) {
+    hondaCameraStream.getTracks().forEach(function(t) { t.stop(); });
+    hondaCameraStream = null;
+  }
+  document.getElementById('honda-camera-box').classList.add('hidden');
+}
+
+function hondaCapturePhoto() {
+  var video  = document.getElementById('honda-video');
+  var canvas = document.getElementById('honda-canvas');
+  canvas.width  = video.videoWidth  || 640;
+  canvas.height = video.videoHeight || 480;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  hondaStopCamera();
+  document.getElementById('honda-preview-img').src = dataUrl;
+  document.getElementById('honda-preview-box').classList.remove('hidden');
+  hondaRunOCR(dataUrl);
+}
+
+
 
 function hondaShowPanel(show) {
   var panel = document.getElementById('honda-panel');
@@ -735,6 +790,7 @@ function hondaShowPanel(show) {
 }
 
 function hondaClearPhoto() {
+  hondaStopCamera();
   document.getElementById('honda-preview-box').classList.add('hidden');
   document.getElementById('honda-preview-img').src = '';
   document.getElementById('honda-ocr-result').classList.add('hidden');
@@ -925,6 +981,7 @@ function hondaHandleQR() {
 }
 
 function hondaFullReset() {
+  hondaStopCamera();
   hondaOcrPart = null; hondaOcrQty = null;
   document.getElementById('honda-step1').classList.remove('hidden');
   document.getElementById('honda-step2').classList.add('hidden');
