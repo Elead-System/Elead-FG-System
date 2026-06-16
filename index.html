@@ -1,0 +1,1834 @@
+<!doctype html>
+<html lang="th" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Q-GATE Verification</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Noto Sans Thai', 'JetBrains Mono', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  @keyframes pulsePass { 0%,100%{transform:scale(1)} 50%{transform:scale(1.03)} }
+  @keyframes slideFadeIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+  .anim-pulse { animation: pulsePass 0.6s ease-in-out 3; }
+  .anim-slide { animation: slideFadeIn 0.3s ease-out; }
+  .scan-input:focus { box-shadow: 0 0 0 3px rgba(59,130,246,0.5); }
+  .result-banner { transition: all 0.3s ease; }
+  .tab-btn { border-radius: 8px; font-weight: 600; }
+  .card-elevated { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .part-card { background: linear-gradient(135deg, var(--grad-from) 0%, var(--grad-to) 100%); box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+  #loading-overlay { position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center; }
+  .spinner { border:4px solid rgba(0,0,0,0.1);width:40px;height:40px;border-radius:50%;border-left-color:#0284c7;animation:spin 1s ease infinite; }
+  @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+  </style>
+ </head>
+ <body class="h-full bg-[#f0f7ff] text-[#0f172a] overflow-auto">
+
+  <div id="loading-overlay" style="display:none">
+   <div class="spinner mb-3"></div>
+   <div id="loading-text" class="text-[#0284c7] font-bold text-sm">กำลังเชื่อมต่อฐานข้อมูล...</div>
+  </div>
+
+  <div id="app" class="w-full h-full flex flex-col">
+
+   <header class="bg-white border-b border-[#e0e7ff] px-4 py-3 flex items-center justify-between shrink-0">
+    <div>
+     <h1 class="text-xl font-bold text-[#0284c7] mono tracking-wider">Q-GATE</h1>
+     <p class="text-xs text-[#64748b]">Pre-Shipment Verification</p>
+    </div>
+    <div class="flex items-center gap-2">
+     <div id="status-dot" class="w-3 h-3 rounded-full bg-[#cbd5e1]"></div>
+     <span id="status-text" class="text-xs text-[#64748b]">IDLE</span>
+    </div>
+   </header>
+
+   <nav class="bg-[#1a2538] border-b border-[#2a3a52] px-4 py-2 flex gap-2 shrink-0">
+    <button onclick="switchTab('scan')" class="tab-btn active px-4 py-2 text-sm rounded-lg" data-tab="scan" style="color:#38bdf8;border-bottom:2px solid #38bdf8">
+     <i data-lucide="scanner" style="width:16px;height:16px;display:inline;margin-right:6px;vertical-align:middle"></i>Scan
+    </button>
+    <button onclick="switchTab('history')" class="tab-btn px-4 py-2 text-sm rounded-lg hover:text-[#38bdf8]" data-tab="history" style="color:#e2e8f0;border-bottom:2px solid transparent">
+     <i data-lucide="list" style="width:16px;height:16px;display:inline;margin-right:6px;vertical-align:middle"></i>History
+    </button>
+    <button onclick="switchTab('report')" class="tab-btn px-4 py-2 text-sm rounded-lg hover:text-[#38bdf8]" data-tab="report" style="color:#e2e8f0;border-bottom:2px solid transparent">
+     <i data-lucide="bar-chart-3" style="width:16px;height:16px;display:inline;margin-right:6px;vertical-align:middle"></i>Report
+    </button>
+   </nav>
+
+   <!-- TAB: SCAN -->
+   <main id="tab-scan" class="flex-1 overflow-auto flex flex-col">
+
+    <!-- TODAY'S PROGRESS — แสดงทั้ง MATCO + Milk-Run พร้อมกัน อยู่แค่ในหน้า Scan -->
+    <div id="sticky-progress" class="hidden bg-[#0f1724] border-b border-[#2a3a52] px-4 py-2 shrink-0">
+     <div class="flex items-center justify-between mb-1">
+      <div class="flex items-center gap-2">
+       <span class="text-[11px] font-bold text-[#94a3b8] uppercase tracking-wider">Today's Progress</span>
+       <span id="sp-date" class="text-[10px] text-[#38bdf8] mono font-bold"></span>
+      </div>
+      <span id="sp-numbers" class="mono text-sm font-bold text-[#e2e8f0]">0 / 0</span>
+     </div>
+     <!-- แถบรวม overall -->
+     <div class="w-full bg-[#1a2538] rounded-full h-1.5 overflow-hidden mb-1">
+      <div id="sp-bar" class="h-1.5 rounded-full transition-all duration-500" style="width:0%;background:#38bdf8"></div>
+     </div>
+     <!-- แถบแยก MATCO / Milk-Run -->
+     <div class="grid grid-cols-2 gap-2 mt-2" id="sp-type-rows"></div>
+     <!-- badge part ที่ขาด -->
+     <div id="sp-missing" class="hidden mt-1.5 flex flex-wrap gap-1"></div>
+    </div>
+
+    <div class="p-4 flex flex-col gap-4">
+
+    <div class="bg-white rounded-xl border border-[#e0e7ff] p-4 card-elevated shadow-sm grid grid-cols-2 gap-4">
+     <div class="border-r border-[#e0e7ff] pr-4">
+      <label class="text-xs text-[#0284c7] uppercase tracking-wider mb-2 block font-bold">1 เลือกวันที่จัดส่ง</label>
+      <input type="date" id="shipping-date-select" onchange="fetchOrderLimits(this.value)" class="w-full bg-[#f8fafc] border-2 border-[#e0e7ff] rounded-lg px-3 py-3 text-[#1e293b] font-bold outline-none cursor-pointer hover:border-[#0284c7] focus:border-[#0284c7]">
+     </div>
+     <div id="job-type-container" style="opacity:0.5;pointer-events:none">
+      <label class="text-xs text-[#64748b] uppercase tracking-wider mb-2 block font-bold" id="label-job">2 เลือกประเภทงาน</label>
+      <select id="job-type-select" onchange="selectJobType(this.value)" class="w-full bg-[#f0f7ff] border-2 border-[#e0e7ff] rounded-lg px-3 py-3 text-[#1e293b] text-sm font-semibold outline-none cursor-pointer hover:border-[#0284c7]">
+       <option value="">-- รอเลือกวันที่ --</option>
+       <option value="Milk-Run">Milk-Run</option>
+       <option value="MATCO">MATCO</option>
+       <option value="Honda">Honda</option>
+      </select>
+     </div>
+    </div>
+
+    <div id="order-limit-box" class="hidden bg-white rounded-xl border border-[#e0e7ff] p-3 flex items-center justify-between gap-3 shadow-sm">
+     <div class="flex items-center gap-3">
+      <div class="text-2xl" id="order-limit-icon">📦</div>
+      <div>
+       <div class="text-sm font-bold text-[#1e293b]" id="order-limit-title">Order Target</div>
+       <div id="order-limit-detail" class="text-[11px] text-[#64748b] font-medium mono">Part: -</div>
+      </div>
+     </div>
+     <div class="text-right bg-[#f8fafc] px-3 py-1 rounded-lg border border-[#e2e8f0]">
+      <span class="text-xs text-[#64748b] block mb-1">Scanned / Total</span>
+      <span id="order-limit-numbers" class="text-xl font-bold text-[#0284c7] mono">0 / 0</span>
+     </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-[#e0e7ff] p-4 card-elevated" id="scan-container" style="opacity:0.5">
+     <label class="text-xs text-[#64748b] uppercase tracking-wider mb-2 block font-bold">3 Scan / Paste Barcode</label>
+     <div class="flex gap-3">
+      <input id="scan-input" type="text" placeholder="สแกนหรือวาง barcode ที่นี่..." class="scan-input flex-1 bg-[#f8fafc] border-2 border-[#e0e7ff] rounded-lg px-4 py-3 text-[#1e293b] mono text-sm outline-none placeholder-[#94a3b8] focus:border-[#0284c7] focus:bg-white" autocomplete="off" disabled>
+      <button id="btn-submit" onclick="handleScan()" class="bg-[#0284c7] hover:bg-[#0369a1] active:scale-95 text-white font-bold px-6 py-3 rounded-lg text-sm transition-all shrink-0 shadow-md" disabled>SCAN</button>
+     </div>
+    </div>
+
+    <!-- HONDA OCR PANEL -->
+    <div id="honda-panel" class="hidden bg-white rounded-xl border-2 border-[#f59e0b] p-4 card-elevated">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-lg">🔴</span>
+        <span class="text-sm font-bold text-[#92400e]">Honda Kanban — ถ่ายรูปใบ Kanban</span>
+        <span id="honda-step-badge" class="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#fef3c7] text-[#92400e]">STEP 1: ถ่ายรูป</span>
+      </div>
+
+      <!-- Step 1: Camera / Upload -->
+      <div id="honda-step1" class="">
+        <div id="honda-preview-box" class="hidden mb-3 relative">
+          <img id="honda-preview-img" class="w-full rounded-lg border border-[#e0e7ff] max-h-48 object-contain bg-[#f8fafc]" src="" alt="preview">
+          <button onclick="hondaClearPhoto()" class="absolute top-2 right-2 bg-[#ef4444] text-white text-xs px-2 py-0.5 rounded-full font-bold">✕ ล้าง</button>
+        </div>
+        <div id="honda-ocr-status" class="hidden mb-3 text-xs text-center text-[#64748b] font-medium py-2 bg-[#f8fafc] rounded-lg">กำลังอ่านข้อความ...</div>
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <label class="flex items-center justify-center gap-2 bg-[#f59e0b] hover:bg-[#d97706] text-white font-bold py-3 rounded-xl cursor-pointer text-sm transition-colors">
+            <span>📷</span> ถ่ายรูป
+            <input type="file" accept="image/*" capture="environment" class="hidden" onchange="hondaHandlePhoto(this)">
+          </label>
+          <label class="flex items-center justify-center gap-2 bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold py-3 rounded-xl cursor-pointer text-sm transition-colors">
+            <span>🖼</span> เลือกรูป
+            <input type="file" accept="image/*" class="hidden" onchange="hondaHandlePhoto(this)">
+          </label>
+        </div>
+        <!-- OCR Result Display -->
+        <div id="honda-ocr-result" class="hidden bg-[#f0f7ff] rounded-xl border border-[#bfdbfe] p-3 space-y-2">
+          <div class="text-xs font-bold text-[#0284c7] mb-2">📋 ผลการอ่านจากรูป (กรุณาตรวจสอบ)</div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-[#64748b] w-24 shrink-0">PART NO. HATC:</span>
+            <input id="honda-ocr-part" type="text" class="flex-1 bg-white border border-[#bfdbfe] rounded-lg px-2 py-1.5 text-xs mono font-bold text-[#0f172a] outline-none focus:border-[#0284c7]" placeholder="เช่น 36506-3P2-Z011-M1">
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-[#64748b] w-24 shrink-0">QUANTITY:</span>
+            <input id="honda-ocr-qty" type="number" class="flex-1 bg-white border border-[#bfdbfe] rounded-lg px-2 py-1.5 text-xs mono font-bold text-[#0f172a] outline-none focus:border-[#0284c7]" placeholder="เช่น 15">
+          </div>
+          <button onclick="hondaConfirmOCR()" class="w-full bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold py-2.5 rounded-xl text-sm transition-colors mt-1">
+            ✅ ยืนยันข้อมูล → ไป STEP 2
+          </button>
+        </div>
+        <!-- Manual fallback -->
+        <div id="honda-manual-entry" class="hidden mt-2">
+          <div class="text-xs text-[#64748b] mb-2 font-medium">หรือกรอกข้อมูลด้วยมือ:</div>
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs text-[#64748b] w-24 shrink-0">PART NO. HATC:</span>
+            <input id="honda-manual-part" type="text" class="flex-1 bg-[#f8fafc] border border-[#e0e7ff] rounded-lg px-2 py-1.5 text-xs mono font-bold outline-none focus:border-[#0284c7]" placeholder="36506-3P2-Z011-M1">
+          </div>
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs text-[#64748b] w-24 shrink-0">QUANTITY:</span>
+            <input id="honda-manual-qty" type="number" class="flex-1 bg-[#f8fafc] border border-[#e0e7ff] rounded-lg px-2 py-1.5 text-xs mono font-bold outline-none focus:border-[#0284c7]" placeholder="15">
+          </div>
+          <button onclick="hondaConfirmManual()" class="w-full bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
+            ✅ ยืนยัน (manual) → ไป STEP 2
+          </button>
+        </div>
+        <button onclick="document.getElementById('honda-manual-entry').classList.toggle('hidden')" class="w-full mt-2 text-xs text-[#64748b] underline text-center">กรอกด้วยมือแทน OCR</button>
+      </div>
+
+      <!-- Step 2: Scan QR -->
+      <div id="honda-step2" class="hidden">
+        <div class="bg-[#f0fdf4] rounded-xl border border-[#86efac] p-3 mb-3">
+          <div class="text-xs font-bold text-[#15803d] mb-1">✅ ข้อมูล Kanban (จาก OCR)</div>
+          <div class="flex justify-between text-xs mono">
+            <span class="text-[#64748b]">Part No.:</span>
+            <span id="honda-confirmed-part" class="font-bold text-[#0f172a]">-</span>
+          </div>
+          <div class="flex justify-between text-xs mono mt-1">
+            <span class="text-[#64748b]">Qty:</span>
+            <span id="honda-confirmed-qty" class="font-bold text-[#0f172a]">-</span>
+          </div>
+        </div>
+        <div class="text-xs text-[#64748b] font-medium mb-2">STEP 2: สแกน QR บน Label สินค้า</div>
+        <div class="flex gap-2">
+          <input id="honda-qr-input" type="text" placeholder="สแกน QR Label..." class="scan-input flex-1 bg-[#f8fafc] border-2 border-[#e0e7ff] rounded-lg px-3 py-2.5 text-xs mono outline-none focus:border-[#f59e0b]" autocomplete="off">
+          <button onclick="hondaHandleQR()" class="bg-[#f59e0b] hover:bg-[#d97706] text-white font-bold px-4 py-2.5 rounded-lg text-sm transition-all">SCAN</button>
+        </div>
+        <button onclick="hondaResetStep1()" class="w-full mt-2 text-xs text-[#64748b] underline text-center">← กลับแก้ไข Kanban</button>
+      </div>
+    </div>
+
+    <div id="result-banner" class="result-banner hidden rounded-xl p-6 text-center">
+     <div id="result-icon" class="text-5xl mb-2"></div>
+     <div id="result-text" class="text-2xl font-bold mono"></div>
+     <div id="result-detail" class="text-sm mt-1 opacity-80"></div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-3">
+     <div class="part-card rounded-xl p-5" style="--grad-from:#dbeafe;--grad-to:#e0f2fe">
+      <div class="text-[11px] text-[#0c4a6e] uppercase tracking-widest mb-3 font-bold opacity-80">STEP 1</div>
+      <div class="text-[10px] text-[#0c4a6e] mb-3 font-medium">Kanban Barcode</div>
+      <div id="val-barcode" class="mono text-base text-[#0284c7] font-bold truncate bg-white bg-opacity-60 px-3 py-2 rounded-lg">-</div>
+     </div>
+     <div class="part-card rounded-xl p-5" style="--grad-from:#e9d5ff;--grad-to:#f3e8ff">
+      <div class="text-[11px] text-[#6b21a8] uppercase tracking-widest mb-3 font-bold opacity-80">STEP 2</div>
+      <div class="text-[10px] text-[#6b21a8] mb-3 font-medium">Kanban QR</div>
+      <div class="space-y-2">
+       <div class="flex items-center justify-between bg-white bg-opacity-60 px-3 py-2 rounded-lg">
+        <span class="text-[10px] text-[#7e22ce] font-medium">Part:</span>
+        <span id="val-kanban" class="mono text-sm text-[#7e22ce] font-bold">-</span>
+       </div>
+       <div class="flex items-center justify-between bg-white bg-opacity-60 px-3 py-2 rounded-lg">
+        <span class="text-[10px] text-[#7e22ce] font-medium">QR Qty:</span>
+        <span id="val-expected" class="mono text-sm text-[#7e22ce] font-bold">-</span>
+       </div>
+      </div>
+     </div>
+     <div class="part-card rounded-xl p-5" style="--grad-from:#dcfce7;--grad-to:#dbeafe">
+      <div class="text-[11px] text-[#166534] uppercase tracking-widest mb-3 font-bold opacity-80">STEP 3</div>
+      <div class="text-[10px] text-[#166534] mb-3 font-medium">Green Label</div>
+      <div class="space-y-2">
+       <div class="flex items-center justify-between bg-white bg-opacity-60 px-3 py-2 rounded-lg">
+        <span class="text-[10px] text-[#15803d] font-medium">Part:</span>
+        <span id="val-label" class="mono text-sm text-[#15803d] font-bold">-</span>
+       </div>
+       <div class="flex items-center justify-between bg-white bg-opacity-60 px-3 py-2 rounded-lg">
+        <span class="text-[10px] text-[#15803d] font-medium">Qty:</span>
+        <span id="val-label-qty" class="mono text-sm text-[#15803d] font-bold">-</span>
+       </div>
+      </div>
+     </div>
+    </div>
+
+    <div id="part-match-box" class="hidden bg-white rounded-xl border border-[#e0e7ff] p-3 flex items-center gap-3">
+     <div id="part-match-icon" class="text-2xl"></div>
+     <div>
+      <div id="part-match-text" class="text-sm font-semibold text-[#1e293b]"></div>
+      <div id="part-match-detail" class="text-xs text-[#64748b]"></div>
+     </div>
+    </div>
+
+    <button onclick="resetAll()" class="w-full bg-[#2a3a52] hover:bg-[#3a4a62] text-[#e2e8f0] font-semibold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2">
+     <i data-lucide="rotate-ccw" style="width:16px;height:16px"></i>RESET DATA
+    </button>
+
+    <!-- Order Summary -->
+    <div id="order-summary-section" class="hidden bg-[#1a2538] rounded-xl border border-[#2a3a52] p-4">
+     <div class="flex items-center justify-between mb-3">
+      <h3 class="text-xs text-[#94a3b8] uppercase tracking-wider font-semibold">Order Summary (LIVE)</h3>
+      <span id="order-summary-date" class="text-[10px] text-[#38bdf8] mono font-bold"></span>
+     </div>
+     <div id="order-summary-list" class="space-y-2"></div>
+    </div>
+
+    </div><!-- end p-4 -->
+   </main>
+
+   <!-- TAB: HISTORY -->
+   <main id="tab-history" class="hidden flex-1 overflow-auto p-4 flex flex-col gap-4">
+    <h2 class="text-lg font-bold text-[#0f172a] mono">ประวัติการสแกน</h2>
+    <div class="bg-[#1a2538] rounded-xl border border-[#2a3a52] p-4 space-y-3">
+     <div class="grid grid-cols-2 gap-3">
+      <div>
+       <label class="text-xs text-[#94a3b8] uppercase tracking-wider mb-2 block font-semibold">เลือกวันที่</label>
+       <div class="relative">
+        <input id="history-date-picker" type="text" placeholder="Click to select date" readonly class="w-full bg-[#0f1724] border border-[#2a3a52] rounded-lg px-3 py-2 text-xs text-[#e2e8f0] outline-none cursor-pointer hover:border-[#38bdf8]">
+        <div id="calendar-popup" class="hidden absolute top-full mt-2 bg-[#0f1724] border-2 border-[#38bdf8] rounded-lg p-4 z-50 w-72 shadow-2xl">
+         <div class="flex items-center justify-between mb-4">
+          <button onclick="calPrevMonth()" class="bg-[#2a3a52] hover:bg-[#3a4a62] text-[#e2e8f0] px-3 py-1 rounded text-xs font-semibold">Prev</button>
+          <div id="cal-month-year" class="text-sm font-bold text-[#38bdf8] mono text-center flex-1"></div>
+          <button onclick="calNextMonth()" class="bg-[#2a3a52] hover:bg-[#3a4a62] text-[#e2e8f0] px-3 py-1 rounded text-xs font-semibold">Next</button>
+         </div>
+         <div class="grid grid-cols-7 gap-1 mb-2">
+          <div class="text-center text-[10px] text-[#94a3b8] font-bold">Su</div><div class="text-center text-[10px] text-[#94a3b8] font-bold">Mo</div><div class="text-center text-[10px] text-[#94a3b8] font-bold">Tu</div><div class="text-center text-[10px] text-[#94a3b8] font-bold">We</div><div class="text-center text-[10px] text-[#94a3b8] font-bold">Th</div><div class="text-center text-[10px] text-[#94a3b8] font-bold">Fr</div><div class="text-center text-[10px] text-[#94a3b8] font-bold">Sa</div>
+         </div>
+         <div id="cal-days" class="grid grid-cols-7 gap-1"></div>
+        </div>
+       </div>
+      </div>
+      <div>
+       <label class="text-xs text-[#94a3b8] uppercase tracking-wider mb-2 block font-semibold">ผลการสแกน</label>
+       <select id="history-result-filter" onchange="filterHistory()" class="w-full bg-[#0f1724] border border-[#2a3a52] rounded-lg px-3 py-2 text-xs text-[#e2e8f0] outline-none">
+        <option value="all">ทั้งหมด</option>
+        <option value="PASS">PASS only</option>
+        <option value="FAIL">FAIL only</option>
+       </select>
+      </div>
+     </div>
+     <div>
+      <label class="text-xs text-[#94a3b8] uppercase tracking-wider mb-2 block font-semibold">กรอง Dock</label>
+      <select id="history-dock-filter" onchange="filterHistory()" class="w-full bg-[#0f1724] border border-[#2a3a52] rounded-lg px-3 py-2 text-xs text-[#e2e8f0] mono outline-none focus:border-[#38bdf8]">
+       <option value="">ทั้งหมด</option>
+      </select>
+     </div>
+     <div>
+      <label class="text-xs text-[#94a3b8] uppercase tracking-wider mb-2 block font-semibold">กรอง Part No.</label>
+      <div class="relative">
+       <input id="history-part-filter" type="text" placeholder="พิมพ์ part no. เช่น 86790, D1..." oninput="filterHistory()" class="w-full bg-[#0f1724] border border-[#2a3a52] rounded-lg px-3 py-2 text-xs text-[#e2e8f0] mono outline-none placeholder-[#4a5a72] focus:border-[#38bdf8]">
+       <div id="part-suggestions" class="hidden absolute top-full mt-1 bg-[#0f1724] border border-[#38bdf8] rounded-lg z-40 w-full max-h-40 overflow-y-auto shadow-xl"></div>
+      </div>
+     </div>
+     <button onclick="clearHistoryFilters()" class="w-full bg-[#2a3a52] hover:bg-[#3a4a62] text-[#e2e8f0] text-xs font-semibold py-2 rounded-lg transition-colors">ล้างตัวกรอง</button>
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+     <div class="bg-gradient-to-br from-[#1e3a8a] to-[#1a2538] rounded-xl border border-[#3b82f6] p-3">
+      <div class="text-[10px] text-[#93c5fd] mb-1">Total</div>
+      <div id="history-summary-total" class="text-2xl font-bold text-[#60a5fa]">0</div>
+     </div>
+     <div class="bg-gradient-to-br from-[#15803d] to-[#1a2538] rounded-xl border border-[#22c55e] p-3">
+      <div class="text-[10px] text-[#86efac] mb-1">PASS</div>
+      <div id="history-summary-pass" class="text-2xl font-bold text-[#86efac]">0</div>
+     </div>
+     <div class="bg-gradient-to-br from-[#7f1d1d] to-[#1a2538] rounded-xl border border-[#ef4444] p-3">
+      <div class="text-[10px] text-[#fca5a5] mb-1">FAIL</div>
+      <div id="history-summary-fail" class="text-2xl font-bold text-[#fca5a5]">0</div>
+     </div>
+    </div>
+    <div id="history-list" class="space-y-2"></div>
+    <div id="history-empty" class="text-center text-[#4a5a72] text-xs py-8">ยังไม่มีประวัติ</div>
+   </main>
+
+   <!-- TAB: REPORT -->
+   <main id="tab-report" class="hidden flex-1 overflow-auto p-4 flex flex-col gap-4">
+    <h2 class="text-lg font-bold text-[#0f172a] mono">รายงานสรุป</h2>
+    <div class="grid grid-cols-3 gap-3 mb-4">
+     <div class="bg-gradient-to-br from-[#1e3a8a] to-[#1a2538] rounded-xl border border-[#3b82f6] p-4">
+      <div class="text-[10px] text-[#93c5fd] mb-2">Total Scans</div>
+      <div id="stat-total" class="text-2xl font-bold text-[#60a5fa]">0</div>
+     </div>
+     <div class="bg-gradient-to-br from-[#15803d] to-[#1a2538] rounded-xl border border-[#22c55e] p-4">
+      <div class="text-[10px] text-[#86efac] mb-2">PASS</div>
+      <div id="stat-pass" class="text-2xl font-bold text-[#86efac]">0</div>
+     </div>
+     <div class="bg-gradient-to-br from-[#7f1d1d] to-[#1a2538] rounded-xl border border-[#ef4444] p-4">
+      <div class="text-[10px] text-[#fca5a5] mb-2">FAIL</div>
+      <div id="stat-fail" class="text-2xl font-bold text-[#fca5a5]">0</div>
+     </div>
+    </div>
+    <div class="bg-[#1a2538] rounded-xl border border-[#2a3a52] p-4">
+     <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold text-[#e2e8f0]">Qty by Date — Stacked by Customer</h3>
+      <span class="text-[10px] text-[#4a5a72]">แกน Y = pcs</span>
+     </div>
+     <div style="position:relative;height:280px;margin-bottom:16px"><canvas id="chart-by-date"></canvas></div>
+     <div id="report-by-date" class="space-y-1.5"></div>
+    </div>
+    <div class="bg-[#1a2538] rounded-xl border border-[#2a3a52] p-4">
+     <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-semibold text-[#e2e8f0]">Qty by Month — Stacked by Customer</h3>
+      <span class="text-[10px] text-[#4a5a72]">แกน Y = pcs</span>
+     </div>
+     <div style="position:relative;height:280px;margin-bottom:16px"><canvas id="chart-by-month"></canvas></div>
+     <div id="report-by-month" class="space-y-1.5"></div>
+    </div>
+   </main>
+
+  </div>
+
+  <script>
+var selectedShippingDate = null;
+var selectedJobType = null, kanbanPart = null, kanbanBarcode = null, expectedQty = null;
+var labelPart = null, labelQty = null, labelProductCode = null, currentResult = null;
+var logRecords = [], orderLimits = {}, currentTab = 'scan', step = 0;
+var historyResultFilter = 'all', historyDateFilter = null;
+var chartByDate = null, chartByMonth = null;
+var isSyncing = false;
+
+// ===== FIX 1: Scroll detection =====
+var isUserScrolling = false;
+var scrollTimer = null;
+document.addEventListener('scroll', function() {
+  isUserScrolling = true;
+  clearTimeout(scrollTimer);
+  scrollTimer = setTimeout(function() { isUserScrolling = false; }, 1500);
+}, true);
+
+// ===== DateTime Helpers =====
+function getFormatYMD(isoStr) {
+  if (!isoStr) return '';
+  var d = new Date(isoStr);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function formatDateTime(isoStr) {
+  if (!isoStr) return '-';
+  var d = new Date(isoStr);
+  return String(d.getDate()).padStart(2,'0') + '/' +
+         String(d.getMonth()+1).padStart(2,'0') + '/' +
+         d.getFullYear() + '  ' +
+         String(d.getHours()).padStart(2,'0') + ':' +
+         String(d.getMinutes()).padStart(2,'0') + ':' +
+         String(d.getSeconds()).padStart(2,'0');
+}
+function formatDate(isoStr) {
+  if (!isoStr) return '-';
+  var d = new Date(isoStr);
+  return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+}
+
+function normDateStr(val) {
+  if (!val) return '';
+  var s = String(val).trim();
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+    var p = s.split('/');
+    return p[2] + '-' + p[1].padStart(2,'0') + '-' + p[0].padStart(2,'0');
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
+  var d = new Date(s);
+  if (!isNaN(d.getTime())) return getFormatYMD(d.toISOString());
+  return s;
+}
+
+function isSameShippingDate(recShippingDate, targetDate) {
+  if (!recShippingDate || !targetDate) return false;
+  return normDateStr(recShippingDate) === normDateStr(targetDate);
+}
+
+// ===== LocalStorage State =====
+function saveState() {
+  try {
+    var limitsToSave = {};
+    Object.keys(orderLimits).forEach(function(k) {
+      limitsToSave[k] = {
+        qty:      orderLimits[k].qty,
+        customer: orderLimits[k].customer,
+        type:     orderLimits[k].type
+      };
+    });
+    localStorage.setItem('qgate_date',    selectedShippingDate || '');
+    localStorage.setItem('qgate_jobtype', selectedJobType || '');
+    localStorage.setItem('qgate_limits',  JSON.stringify(limitsToSave));
+  } catch(e) {}
+}
+
+function restoreState() {
+  try {
+    var date = localStorage.getItem('qgate_date');
+    var job  = localStorage.getItem('qgate_jobtype');
+    var lim  = localStorage.getItem('qgate_limits');
+
+    if (lim) {
+      var parsed = JSON.parse(lim);
+      if (parsed && typeof parsed === 'object') {
+        orderLimits = {};
+        Object.keys(parsed).forEach(function(k) {
+          orderLimits[k] = {
+            qty:      parsed[k].qty      || 0,
+            customer: parsed[k].customer || '',
+            type:     parsed[k].type     || '',
+            scanned:  0
+          };
+        });
+      }
+    }
+
+    if (date) {
+      selectedShippingDate = date;
+      document.getElementById('shipping-date-select').value = date;
+      if (Object.keys(orderLimits).length > 0) {
+        document.getElementById('job-type-container').style.opacity = '1';
+        document.getElementById('job-type-container').style.pointerEvents = 'auto';
+        document.getElementById('job-type-select').options[0].text = '-- เลือกประเภทงาน --';
+        document.getElementById('label-job').style.color = '#0284c7';
+      }
+    }
+
+    if (job) {
+      selectedJobType = job;
+      document.getElementById('job-type-select').value = job;
+      if (job === 'Honda') {
+        hondaShowPanel(true);
+      } else {
+        hondaShowPanel(false);
+        document.getElementById('scan-container').style.opacity = '1';
+        document.getElementById('scan-input').disabled = false;
+        document.getElementById('btn-submit').disabled = false;
+      }
+    }
+  } catch(e) {}
+}
+
+// ===== คำนวณ scanned จาก logRecords =====
+function recalcScannedFromLogs() {
+  if (!selectedShippingDate || Object.keys(orderLimits).length === 0) return;
+
+  Object.keys(orderLimits).forEach(function(k) { orderLimits[k].scanned = 0; });
+
+  var targetNorm = normDateStr(selectedShippingDate);
+
+  logRecords.forEach(function(r) {
+    if (r.result !== 'PASS') return;
+
+    var recNorm = normDateStr(r.shipping_date);
+    if (recNorm !== targetNorm) return;
+
+    var key = null;
+    if (r.kanban_part && orderLimits[r.kanban_part]) {
+      key = r.kanban_part;
+    } else if (r.kanban_part && getMatcoOriginalPart(r.kanban_part) !== r.kanban_part
+               && orderLimits[getMatcoOriginalPart(r.kanban_part)]) {
+      key = getMatcoOriginalPart(r.kanban_part);
+    } else if (r.label_part && orderLimits[r.label_part]) {
+      key = r.label_part;
+    } else if (r.kanban_part) {
+      var prefix = r.kanban_part.substring(0, 2).toUpperCase();
+      var found = Object.keys(orderLimits).find(function(k) {
+        return orderLimits[k].type === 'Milk-Run' && k.toUpperCase().startsWith(prefix);
+      });
+      if (found) key = found;
+    }
+
+    if (key) {
+      orderLimits[key].scanned += (parseInt(r.label_qty) || 0);
+    }
+  });
+}
+
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbzobLJWjfsWYtHAKqZWcvEiGlDp59Gqqp7IzQKNiWyZOCpyg9703hN2sZ54k6ArFMso/exec';
+
+// ===== API Helper =====
+function gasGet(params) {
+  var url = GAS_URL + '?' + Object.keys(params).map(function(k) {
+    return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+  }).join('&');
+  return fetch(url).then(function(r) { return r.json(); });
+}
+function gasPost(action, data) {
+  return fetch(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ action: action }, data))
+  }).then(function(r) { return r.json(); });
+}
+
+// ===== Load Logs =====
+function hideOverlay() {
+  document.getElementById('loading-overlay').style.display = 'none';
+}
+
+function loadDataFromGoogleSheet(forceRender) {
+  if (isSyncing && !forceRender) return;
+
+  var isFirstLoad = forceRender && logRecords.length === 0;
+
+  if (isFirstLoad) {
+    document.getElementById('loading-overlay').style.display = 'flex';
+    document.getElementById('loading-text').textContent = 'กำลังโหลดข้อมูล...';
+  }
+
+  var t = setTimeout(function() {
+    hideOverlay();
+    if (isFirstLoad) showToast('โหลดข้อมูลช้าเกินไป กรุณารีเฟรช', 'error');
+  }, 12000);
+
+  gasGet({ action: 'getScanLogs' })
+    .then(function(data) {
+      clearTimeout(t);
+      hideOverlay();
+      try { logRecords = Array.isArray(data) ? data : JSON.parse(data); } catch(e) { logRecords = []; }
+      recalcScannedFromLogs();
+      populateDockOptions();
+      if (!isUserScrolling || forceRender) {
+        renderHistory();
+        updateReport();
+        if (selectedShippingDate && Object.keys(orderLimits).length > 0) {
+          renderOrderSummary(); renderStickyProgress();
+        }
+      }
+      if (isFirstLoad) showToast('โหลดข้อมูลสำเร็จ (' + logRecords.length + ' รายการ)', 'success');
+    })
+    .catch(function(e) {
+      clearTimeout(t);
+      hideOverlay();
+      if (isFirstLoad) showToast('ดึงข้อมูลผิดพลาด: ' + e.message, 'error');
+      console.error('loadDataFromGoogleSheet error:', e);
+    });
+}
+
+// ===== Fetch Order Limits =====
+function fetchOrderLimits(dateVal) {
+  selectedShippingDate = dateVal;
+  if (!dateVal) {
+    document.getElementById('job-type-container').style.opacity = '0.5';
+    document.getElementById('job-type-container').style.pointerEvents = 'none';
+    document.getElementById('job-type-select').options[0].text = '-- รอเลือกวันที่ --';
+    document.getElementById('order-summary-section').classList.add('hidden');
+    orderLimits = {};
+    saveState();
+    return;
+  }
+  document.getElementById('loading-overlay').style.display = 'flex';
+  document.getElementById('loading-text').textContent = 'กำลังโหลดออเดอร์ ' + dateVal + '...';
+  var t = setTimeout(function() {
+    document.getElementById('loading-overlay').style.display = 'none';
+    showToast('โหลดออเดอร์ช้าเกินไป', 'error');
+  }, 15000);
+
+  gasGet({ action: 'getOrderLimits', date: dateVal })
+    .then(function(raw) {
+      clearTimeout(t);
+      if (raw.error) {
+        document.getElementById('loading-overlay').style.display = 'none';
+        showToast(raw.error, 'error'); return;
+      }
+      orderLimits = {};
+      Object.keys(raw).forEach(function(k) {
+        orderLimits[k] = {
+          qty:      parseInt(raw[k].qty) || 0,
+          scanned:  0,
+          customer: raw[k].customer || '',
+          type:     raw[k].type     || ''
+        };
+      });
+      recalcScannedFromLogs();
+      document.getElementById('job-type-container').style.opacity = '1';
+      document.getElementById('job-type-container').style.pointerEvents = 'auto';
+      document.getElementById('job-type-select').options[0].text = '-- เลือกประเภทงาน --';
+      document.getElementById('label-job').style.color = '#0284c7';
+      document.getElementById('loading-overlay').style.display = 'none';
+      showToast('ดึงออเดอร์ ' + dateVal + ' สำเร็จ (' + Object.keys(orderLimits).length + ' รายการ)', 'success');
+      if (selectedJobType) resetStep();
+      renderOrderSummary(); renderStickyProgress();
+      saveState();
+    })
+    .catch(function(e) {
+      clearTimeout(t);
+      document.getElementById('loading-overlay').style.display = 'none';
+      showToast('การเชื่อมต่อล้มเหลว', 'error');
+      console.error(e);
+    });
+}
+
+// ===== Save Log =====
+function saveLog(result) {
+  var now = new Date();
+  var payload = {
+    timestamp: now.toISOString(),
+    shipping_date: selectedShippingDate || getFormatYMD(now),
+    job_type: selectedJobType || 'N/A',
+    kanban_part: kanbanPart || 'N/A',
+    expected_qty: expectedQty || 0,
+    label_part: labelPart || 'N/A',
+    label_qty: labelQty || 0,
+    label_product_code: labelProductCode || 'N/A',
+    result: result
+  };
+
+  logRecords.unshift({
+    timestamp:          payload.timestamp,
+    shipping_date:      payload.shipping_date,
+    job_type:           payload.job_type,
+    kanban_part:        payload.kanban_part,
+    expected_qty:       payload.expected_qty,
+    label_part:         payload.label_part,
+    label_qty:          payload.label_qty,
+    label_product_code: payload.label_product_code,
+    result:             result
+  });
+
+  recalcScannedFromLogs();
+  renderOrderSummary(); renderStickyProgress();
+  saveState();
+
+  isSyncing = true;
+  updateStatus('SAVING...', '#f59e0b');
+  var syncTimeout = setTimeout(function() {
+    isSyncing = false;
+    updateStatus('IDLE', '#94a3b8');
+    showToast('การบันทึกหมดเวลา', 'error');
+  }, 20000);
+
+  gasPost('saveScanLog', { payload: JSON.stringify(payload) })
+    .then(function(res) {
+      clearTimeout(syncTimeout);
+      isSyncing = false;
+      if (res.isOk) {
+        logRecords = res.data;
+        recalcScannedFromLogs();
+        renderHistory();
+        updateReport();
+        updateStatus('IDLE', '#94a3b8');
+        updateDisplay();
+        renderOrderSummary(); renderStickyProgress();
+        saveState();
+      } else {
+        showToast('บันทึกล้มเหลว', 'error');
+        updateStatus('IDLE', '#94a3b8');
+      }
+    })
+    .catch(function(e) {
+      clearTimeout(syncTimeout);
+      isSyncing = false;
+      showToast('ระบบเครือข่ายขัดข้อง', 'error');
+      updateStatus('IDLE', '#94a3b8');
+      console.error('saveScanLog error:', e);
+    });
+}
+
+// ===== HONDA Reference Mapping (QR field[3] → Part No.) =====
+var hondaMapping = {
+  'B732HAC1Z01T': '36565-T00-Z012-M1',
+  'B732HAC1Z02T': '08A78-PY4A-7M00-B1',
+  'B732HAC1Z03T': '36665-T00-Z011-M1',
+  'B732HAC1Z04T': '36675-T00-Z011-M1',
+  'B732HAC1Z05T': '36535-T00-Z011-M1',
+  'B732HAC1Z06T': '08A78-PY4A-7M00-C2',
+  'B732HAC1Z07T': '36535-3P2-Z011-M1',
+  'B732HAC1Z08T': '08A78-PY4A-AM00-D1',
+  'B732HAC1Z09T': '36506-T00-Z011-M1'
+};
+
+// Honda state
+var hondaOcrPart = null, hondaOcrQty = null;
+
+function hondaShowPanel(show) {
+  var panel = document.getElementById('honda-panel');
+  var scanCont = document.getElementById('scan-container');
+  if (show) {
+    panel.classList.remove('hidden');
+    scanCont.style.display = 'none';
+  } else {
+    panel.classList.add('hidden');
+    scanCont.style.display = '';
+  }
+}
+
+function hondaClearPhoto() {
+  document.getElementById('honda-preview-box').classList.add('hidden');
+  document.getElementById('honda-preview-img').src = '';
+  document.getElementById('honda-ocr-result').classList.add('hidden');
+  document.getElementById('honda-ocr-status').classList.add('hidden');
+}
+
+function hondaHandlePhoto(input) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('honda-preview-img').src = e.target.result;
+    document.getElementById('honda-preview-box').classList.remove('hidden');
+    hondaRunOCR(e.target.result);
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function hondaRunOCR(dataUrl) {
+  var statusEl = document.getElementById('honda-ocr-status');
+  statusEl.textContent = 'กำลังอ่านข้อความจากรูป...';
+  statusEl.classList.remove('hidden');
+  document.getElementById('honda-ocr-result').classList.add('hidden');
+
+  if (typeof Tesseract === 'undefined') {
+    statusEl.textContent = 'กำลังโหลด OCR Engine...';
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = function() { hondaDoOCR(dataUrl); };
+    s.onerror = function() {
+      statusEl.textContent = 'โหลด OCR ล้มเหลว กรุณากรอกด้วยมือ';
+      document.getElementById('honda-manual-entry').classList.remove('hidden');
+    };
+    document.head.appendChild(s);
+  } else {
+    hondaDoOCR(dataUrl);
+  }
+}
+
+function hondaDoOCR(dataUrl) {
+  var statusEl = document.getElementById('honda-ocr-status');
+  Tesseract.recognize(dataUrl, 'eng', {
+    logger: function(m) {
+      if (m.status === 'recognizing text') {
+        statusEl.textContent = 'กำลังอ่าน... ' + Math.round((m.progress||0)*100) + '%';
+      }
+    }
+  }).then(function(result) {
+    var text = result.data.text || '';
+    statusEl.classList.add('hidden');
+
+    // Parse PART NO. HATC
+    var partMatch = text.match(/(?:PART\s*NO[.\s]*HATC[^\n]*\n?)([A-Z0-9][\w\-]{6,})/i);
+    var foundPart = '';
+    if (partMatch) {
+      foundPart = partMatch[1].trim().replace(/\s+/g,'');
+    } else {
+      // fallback: ค้นหา pattern เลข part Honda (เช่น 36506-3P2-Z011-M1)
+      var fallbackPart = text.match(/\b(\d{5}-\w{2,5}-\w{4,}-\w{1,3})\b/);
+      if (fallbackPart) foundPart = fallbackPart[1].trim();
+    }
+
+    // Parse QUANTITY
+    var qtyMatch = text.match(/QUANTIT[Y]?\s*[\r\n]+\s*(\d+)/i);
+    var foundQty = '';
+    if (qtyMatch) {
+      foundQty = qtyMatch[1];
+    } else {
+      // fallback: ค้นหาตัวเลข 1-3 หลักที่น่าจะเป็น qty ใกล้คำว่า qty
+      var qtyFb = text.match(/(?:QTY|QUANTITY)[^\d]*(\d{1,3})/i);
+      if (qtyFb) foundQty = qtyFb[1];
+    }
+
+    document.getElementById('honda-ocr-part').value = foundPart;
+    document.getElementById('honda-ocr-qty').value = foundQty;
+    document.getElementById('honda-ocr-result').classList.remove('hidden');
+    showToast('OCR อ่านเสร็จ กรุณาตรวจสอบข้อมูล', 'success');
+  }).catch(function(err) {
+    statusEl.textContent = 'OCR ล้มเหลว: ' + (err.message||err);
+    document.getElementById('honda-manual-entry').classList.remove('hidden');
+    showToast('OCR ล้มเหลว กรุณากรอกด้วยมือ', 'error');
+  });
+}
+
+function hondaConfirmOCR() {
+  var part = (document.getElementById('honda-ocr-part').value || '').trim().replace(/\s+/g,'');
+  var qty  = parseInt(document.getElementById('honda-ocr-qty').value, 10);
+  if (!part) { showToast('กรุณาระบุ Part No.', 'error'); return; }
+  if (isNaN(qty) || qty <= 0) { showToast('กรุณาระบุ Quantity ให้ถูกต้อง', 'error'); return; }
+  hondaProceedToStep2(part, qty);
+}
+
+function hondaConfirmManual() {
+  var part = (document.getElementById('honda-manual-part').value || '').trim().replace(/\s+/g,'');
+  var qty  = parseInt(document.getElementById('honda-manual-qty').value, 10);
+  if (!part) { showToast('กรุณาระบุ Part No.', 'error'); return; }
+  if (isNaN(qty) || qty <= 0) { showToast('กรุณาระบุ Quantity ให้ถูกต้อง', 'error'); return; }
+  hondaProceedToStep2(part, qty);
+}
+
+function hondaProceedToStep2(part, qty) {
+  hondaOcrPart = part;
+  hondaOcrQty  = qty;
+  kanbanPart   = part;
+  expectedQty  = qty;
+  step = 1;
+
+  document.getElementById('honda-confirmed-part').textContent = part;
+  document.getElementById('honda-confirmed-qty').textContent  = qty + ' pcs';
+  document.getElementById('honda-step1').classList.add('hidden');
+  document.getElementById('honda-step2').classList.remove('hidden');
+  document.getElementById('honda-step-badge').textContent = 'STEP 2: สแกน QR';
+  document.getElementById('honda-qr-input').focus();
+  updateDisplay();
+  showToast('ยืนยัน Kanban แล้ว สแกน QR Label ได้เลย', 'success');
+  soundBeep();
+}
+
+function hondaResetStep1() {
+  hondaOcrPart = null; hondaOcrQty = null;
+  document.getElementById('honda-step1').classList.remove('hidden');
+  document.getElementById('honda-step2').classList.add('hidden');
+  document.getElementById('honda-step-badge').textContent = 'STEP 1: ถ่ายรูป';
+  resetStep();
+}
+
+function hondaHandleQR() {
+  var input = document.getElementById('honda-qr-input');
+  var raw   = (input.value || '').trim();
+  input.value = '';
+  if (!raw) return;
+
+  // Parse QR: P...,order,model,CODE,qty,...
+  var parts = raw.split(',');
+  if (parts.length < 5) {
+    showToast('QR format ไม่ถูกต้อง', 'error'); soundWarn(); return;
+  }
+
+  var qrCode = (parts[3] || '').trim();   // field[3] = B732HAC1ZxxT
+  var qrQty  = parseInt(parts[4], 10);    // field[4] = qty
+
+  // Map code → Part No.
+  var mappedPart = hondaMapping[qrCode] || null;
+  if (!mappedPart) {
+    showToast('ไม่พบรหัส "' + qrCode + '" ในตารางอ้างอิง Honda', 'error');
+    soundWarn(); return;
+  }
+
+  labelPart         = mappedPart;
+  labelQty          = isNaN(qrQty) ? hondaOcrQty : qrQty;
+  labelProductCode  = qrCode;
+  step = 2;
+
+  // ตรวจ duplicate
+  if (isDuplicateLabel(qrCode)) {
+    showToast('❌ Label ซ้ำ! (' + qrCode + ')', 'error');
+    showResult('FAIL', 'Label นี้สแกน PASS ไปแล้ว: ' + qrCode);
+    saveLog('FAIL');
+    setTimeout(function(){ hondaFullReset(); }, 3000);
+    return;
+  }
+
+  // เทียบ Part No. OCR vs QR map
+  var normalizeP = function(s) { return (s||'').replace(/\s+/g,'').toUpperCase(); };
+  var partMatch  = normalizeP(hondaOcrPart) === normalizeP(mappedPart);
+  var qtyMatch   = (!isNaN(qrQty)) ? (qrQty === hondaOcrQty) : true;
+
+  updateDisplay();
+
+  if (!partMatch) {
+    showResult('FAIL', 'Part ไม่ตรง! Kanban: ' + hondaOcrPart + ' / QR map: ' + mappedPart);
+    saveLog('FAIL');
+    setTimeout(function(){ hondaFullReset(); }, 4000);
+    soundFail(); return;
+  }
+  if (!qtyMatch) {
+    showResult('FAIL', 'Qty ไม่ตรง! Kanban: ' + hondaOcrQty + ' / QR: ' + qrQty);
+    saveLog('FAIL');
+    setTimeout(function(){ hondaFullReset(); }, 4000);
+    soundFail(); return;
+  }
+
+  // PASS
+  showResult('PASS', 'Honda ✓ Part: ' + mappedPart + ' | Qty: ' + labelQty);
+  saveLog('PASS');
+  setTimeout(function(){ hondaFullReset(); }, 2500);
+}
+
+function hondaFullReset() {
+  hondaOcrPart = null; hondaOcrQty = null;
+  document.getElementById('honda-step1').classList.remove('hidden');
+  document.getElementById('honda-step2').classList.add('hidden');
+  document.getElementById('honda-step-badge').textContent = 'STEP 1: ถ่ายรูป';
+  document.getElementById('honda-ocr-result').classList.add('hidden');
+  document.getElementById('honda-ocr-status').classList.add('hidden');
+  document.getElementById('honda-preview-box').classList.add('hidden');
+  document.getElementById('honda-manual-entry').classList.add('hidden');
+  document.getElementById('honda-ocr-part').value = '';
+  document.getElementById('honda-ocr-qty').value = '';
+  document.getElementById('honda-manual-part').value = '';
+  document.getElementById('honda-manual-qty').value = '';
+  resetStep();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('honda-qr-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); hondaHandleQR(); }
+  });
+});
+
+
+var matcoMapping = {
+  'PC634-0A003':'B731TMC4Z05T','PC634-0A005':'B731TMC4Z04T','86790-YY030':'B731TMC3Z05T',
+  '86790-YY040':'B731TMC3Z07T','86790-YY250':'B731TMCBZ03T','86790-YY260':'B731TMCBZ04T',
+  '86790-YY650':'B732TMC1AZ04T','86790-YY660':'B732TMC1AZ05T','86790-YY670':'B732TMC1AZ07T',
+  '86790-YY680':'B732TMC1AZ08T'
+};
+var matcoReverseMapping = {};
+Object.keys(matcoMapping).forEach(function(k) { matcoReverseMapping[matcoMapping[k]] = k; });
+function convertMatcoQR(p) { return matcoMapping[p] || p; }
+function getMatcoOriginalPart(converted) { return matcoReverseMapping[converted] || converted; }
+
+// ===== Sound Engine =====
+var _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _audioCtx;
+}
+
+function playTone(config) {
+  try {
+    var ctx = getAudioCtx();
+    var notes = config.notes;
+    var delay = 0;
+    notes.forEach(function(n) {
+      var osc  = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type      = n.type || 'sine';
+      osc.frequency.setValueAtTime(n.freq, ctx.currentTime + delay);
+      gain.gain.setValueAtTime(n.vol || 0.4, ctx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + n.dur);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + n.dur + 0.05);
+      delay += n.dur;
+    });
+  } catch(e) { console.warn('Audio error:', e); }
+}
+
+function soundPass() {
+  playTone({ notes: [
+    { freq: 880, dur: 0.12, type: 'sine',   vol: 0.35 },
+    { freq: 1320,dur: 0.22, type: 'sine',   vol: 0.40 }
+  ]});
+}
+function soundFail() {
+  playTone({ notes: [
+    { freq: 220, dur: 0.18, type: 'square', vol: 0.30 },
+    { freq: 180, dur: 0.30, type: 'square', vol: 0.25 }
+  ]});
+}
+function soundBeep() {
+  playTone({ notes: [
+    { freq: 660, dur: 0.08, type: 'sine', vol: 0.20 }
+  ]});
+}
+function soundWarn() {
+  playTone({ notes: [
+    { freq: 440, dur: 0.10, type: 'triangle', vol: 0.20 },
+    { freq: 330, dur: 0.15, type: 'triangle', vol: 0.15 }
+  ]});
+}
+
+// ===== Duplicate Label Check =====
+function isDuplicateLabel(productCode) {
+  if (!productCode || productCode === 'N/A') return false;
+  return logRecords.some(function(r) {
+    return r.result === 'PASS' &&
+           isSameShippingDate(r.shipping_date, selectedShippingDate) &&
+           r.label_product_code === productCode;
+  });
+}
+
+// ===== Parse Input =====
+function parseInput(raw) {
+  raw = raw.trim();
+  if (!raw) return null;
+  if (selectedJobType === 'MATCO' && matcoMapping[raw]) return { type:'kanban_qr_matco', value:raw };
+  if (raw.includes(',')) {
+    var parts = raw.split(',');
+    var productCode = raw.substring(0,12);
+    var partNumber = (parts[3]||'').trim();
+    var qty = parseInt(parts[4],10);
+    if (!partNumber) return null;
+    return { type:'label', partNumber:partNumber, quantity:isNaN(qty)?null:qty, productCode:productCode };
+  }
+  var hasELED = raw.includes('ELED');
+  var hasELD  = /ELD\d/.test(raw);
+  if (hasELED || hasELD) {
+    var m1 = raw.match(/T\.\s*(\d{1,2})(?=.*20\d\d)/);
+    if (m1) return { type:'kanban_qr', quantity:parseInt(m1[1],10) };
+    var m2 = raw.match(/(\d+)EL(?:ED|D)/);
+    if (m2) { var qty2 = parseInt(m2[1].slice(-4), 10); return { type:'kanban_qr', quantity:qty2 }; }
+  }
+  if (raw.includes('T3099')) {
+    var m3 = raw.match(/T3099\s*(\d{1,2})(?=.*\d{8})/);
+    if (m3) return { type:'kanban_qr', quantity:parseInt(m3[1],10) };
+  }
+  if (!raw.includes('/')) return { type:'kanban_barcode', value:raw };
+  return null;
+}
+
+function selectJobType(jobType) {
+  if (!jobType) {
+    selectedJobType = null;
+    document.getElementById('scan-container').style.opacity = '0.5';
+    document.getElementById('scan-input').disabled = true;
+    document.getElementById('btn-submit').disabled = true;
+    hondaShowPanel(false);
+    saveState(); return;
+  }
+  selectedJobType = jobType;
+
+  if (jobType === 'Honda') {
+    hondaShowPanel(true);
+    hondaFullReset();
+  } else {
+    hondaShowPanel(false);
+    document.getElementById('scan-container').style.opacity = '1';
+    document.getElementById('scan-input').disabled = false;
+    document.getElementById('btn-submit').disabled = false;
+    document.getElementById('scan-input').focus();
+  }
+  showToast('เลือก ' + jobType, 'success');
+  renderStickyProgress();
+  saveState();
+}
+
+function handleScan() {
+  var input = document.getElementById('scan-input');
+  var val = input.value.trim();
+  if (!val) return;
+  if (!selectedJobType) { showToast('เลือกประเภทงานก่อน','error'); return; }
+  var parsed = parseInput(val);
+  if (!parsed) { soundWarn(); showToast('ไม่สามารถอ่านข้อมูลได้','error'); input.value=''; input.focus(); return; }
+
+  if (selectedJobType === 'MATCO') {
+    if (parsed.type === 'kanban_qr_matco') {
+      if (step !== 0) resetStep();
+      kanbanBarcode = convertMatcoQR(parsed.value); kanbanPart = kanbanBarcode; step = 1;
+      soundBeep(); showToast('MATCO QR สแกนสำเร็จ','success');
+    } else if (parsed.type === 'label') {
+      if (step !== 1) { showToast('สแกน MATCO QR ก่อน','error'); input.value=''; input.focus(); return; }
+      if (isDuplicateLabel(parsed.productCode)) {
+        showToast('❌ Label ซ้ำ! (' + parsed.productCode + ')','error');
+        showResult('FAIL','Label นี้สแกน PASS ไปแล้ว: ' + parsed.productCode);
+        saveLog('FAIL'); setTimeout(function(){ resetStep(); },3000);
+        input.value=''; input.focus(); return;
+      }
+      labelPart = parsed.partNumber; labelQty = parsed.quantity; labelProductCode = parsed.productCode||''; step = 2;
+      checkPartMatch(); checkMatcoQtyOnly();
+    } else { showToast('ผิดประเภทบาร์โค้ด','error'); input.value=''; input.focus(); return; }
+  } else if (selectedJobType === 'Milk-Run') {
+    if (parsed.type === 'kanban_barcode') {
+      if (step !== 0) resetStep();
+      kanbanBarcode = parsed.value; step = 1;
+      soundBeep(); showToast('Kanban Barcode สแกนสำเร็จ','success');
+    } else if (parsed.type === 'kanban_qr') {
+      if (step !== 1) { showToast('สแกน Kanban Barcode ก่อน','error'); input.value=''; input.focus(); return; }
+      kanbanPart = kanbanBarcode; expectedQty = parsed.quantity; step = 2;
+      soundBeep(); showToast('Kanban QR สำเร็จ (QR Qty: '+expectedQty+')','success');
+    } else if (parsed.type === 'label') {
+      if (step !== 2) { showToast('สแกน QR ก่อน','error'); input.value=''; input.focus(); return; }
+      if (isDuplicateLabel(parsed.productCode)) {
+        showToast('❌ Label ซ้ำ! (' + parsed.productCode + ')','error');
+        showResult('FAIL','Label นี้สแกน PASS ไปแล้ว: ' + parsed.productCode);
+        saveLog('FAIL'); setTimeout(function(){ resetStep(); },3000);
+        input.value=''; input.focus(); return;
+      }
+      labelPart = parsed.partNumber; labelQty = parsed.quantity; labelProductCode = parsed.productCode||''; step = 3;
+      checkPartMatch(); checkMilkRunLabelOnly();
+    } else { showToast('ผิดประเภทบาร์โค้ด','error'); input.value=''; input.focus(); return; }
+  }
+  updateDisplay(); input.value=''; input.focus();
+}
+
+function getOrderKey(part) {
+  if (!part) return null;
+  if (orderLimits[part]) return part;
+  if (selectedJobType === 'MATCO') {
+    var originalPart = getMatcoOriginalPart(part);
+    if (originalPart !== part && orderLimits[originalPart]) return originalPart;
+  }
+  if (selectedJobType === 'Milk-Run' && kanbanBarcode) {
+    var prefix = kanbanBarcode.substring(0,2).toUpperCase();
+    var match = Object.keys(orderLimits).find(function(k) {
+      return orderLimits[k].type === 'Milk-Run' && k.toUpperCase().startsWith(prefix);
+    });
+    if (match) return match;
+  }
+  return part;
+}
+
+function getCurrentScannedQty(key) {
+  if (!key || !orderLimits[key]) return 0;
+  return orderLimits[key].scanned || 0;
+}
+
+function validateOrderLimit() {
+  var orderKey = getOrderKey(kanbanPart);
+  var entry = orderLimits[orderKey];
+  var limit = entry ? entry.qty : undefined;
+  if (limit === undefined || limit === 0) {
+    showResult('FAIL','ไม่มีออเดอร์ Part นี้ ในวันที่ ' + selectedShippingDate);
+    saveLog('FAIL'); setTimeout(function(){ resetStep(); },3500); return false;
+  }
+  var newTotal = getCurrentScannedQty(orderKey) + parseInt(labelQty);
+  if (newTotal > limit) {
+    showResult('FAIL','เกินยอดสั่งซื้อ! (เป้าหมาย: '+limit+', สแกนรวม: '+newTotal+')');
+    saveLog('FAIL'); setTimeout(function(){ resetStep(); },4000); return false;
+  }
+  return true;
+}
+
+function checkPartMatch() {
+  var box = document.getElementById('part-match-box');
+  if (!kanbanPart || !labelPart) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  if (kanbanPart === labelPart) {
+    document.getElementById('part-match-icon').textContent = '✅';
+    document.getElementById('part-match-text').textContent = 'Part Number ตรงกัน';
+    document.getElementById('part-match-detail').textContent = kanbanPart;
+    box.style.borderLeft = '4px solid #22c55e';
+  } else {
+    document.getElementById('part-match-icon').textContent = '❌';
+    document.getElementById('part-match-text').textContent = 'Part Number ไม่ตรง!';
+    document.getElementById('part-match-detail').textContent = 'Kanban: '+kanbanPart+' / Label: '+labelPart;
+    box.style.borderLeft = '4px solid #ef4444';
+    showResult('FAIL','Part Number ไม่ตรงกัน'); saveLog('FAIL');
+    setTimeout(function(){ resetStep(); },2000);
+  }
+}
+
+function checkMilkRunLabelOnly() {
+  if (!kanbanPart || !labelPart || kanbanPart !== labelPart) return;
+  if (!validateOrderLimit()) return;
+  showResult('PASS','ตรวจสอบสำเร็จ (Label Qty: ' + labelQty + ')');
+  saveLog('PASS');
+  setTimeout(function(){ resetStep(); },2500);
+}
+
+function checkMatcoQtyOnly() {
+  if (!validateOrderLimit()) return;
+  showResult('PASS','ตรวจสอบสำเร็จ'); saveLog('PASS');
+  setTimeout(function(){ resetStep(); },2500);
+}
+
+function showResult(type, detail) {
+  var banner = document.getElementById('result-banner');
+  banner.classList.remove('hidden');
+  banner.className = 'result-banner rounded-xl p-6 text-center anim-pulse';
+  if (type === 'PASS') {
+    soundPass();
+    banner.style.backgroundColor='#166534'; banner.style.borderLeft='6px solid #22c55e';
+    document.getElementById('result-icon').textContent='✓';
+    document.getElementById('result-text').textContent='PASS';
+    document.getElementById('result-text').style.color='#4ade80';
+    updateStatus('PASS','#22c55e');
+  } else {
+    soundFail();
+    banner.style.backgroundColor='#7f1d1d'; banner.style.borderLeft='6px solid #ef4444';
+    document.getElementById('result-icon').textContent='✗';
+    document.getElementById('result-text').textContent='FAIL';
+    document.getElementById('result-text').style.color='#f87171';
+    updateStatus('FAIL','#ef4444');
+  }
+  document.getElementById('result-detail').textContent = detail;
+  currentResult = type;
+}
+
+function updateStatus(text, color) {
+  document.getElementById('status-dot').style.backgroundColor = color;
+  document.getElementById('status-text').textContent = text;
+  document.getElementById('status-text').style.color = color;
+}
+
+function updateDisplay() {
+  document.getElementById('val-barcode').textContent = kanbanBarcode||'-';
+  document.getElementById('val-kanban').textContent = kanbanPart||'-';
+  document.getElementById('val-expected').textContent = expectedQty!==null?expectedQty:'-';
+  document.getElementById('val-label').textContent = labelPart||'-';
+  document.getElementById('val-label-qty').textContent = labelQty!==null?labelQty:'-';
+  var limitBox = document.getElementById('order-limit-box');
+  if (kanbanPart && step>0 && selectedShippingDate) {
+    var orderKey = getOrderKey(kanbanPart);
+    var entry = orderLimits[orderKey];
+    var limit = entry?entry.qty:0;
+    var scanned = getCurrentScannedQty(orderKey);
+    document.getElementById('order-limit-title').textContent = 'Order Target ('+selectedShippingDate+')';
+    document.getElementById('order-limit-detail').textContent = 'Part: '+(orderKey||kanbanPart);
+    document.getElementById('order-limit-numbers').textContent = scanned+' / '+limit;
+    if (limit===0) { document.getElementById('order-limit-icon').textContent='⚠'; limitBox.style.borderLeft='4px solid #ef4444'; }
+    else if (scanned>=limit) { document.getElementById('order-limit-icon').textContent='✅'; limitBox.style.borderLeft='4px solid #22c55e'; }
+    else { document.getElementById('order-limit-icon').textContent='📦'; limitBox.style.borderLeft='4px solid #3b82f6'; }
+    limitBox.classList.remove('hidden');
+  } else { limitBox.classList.add('hidden'); }
+}
+
+function resetStep() {
+  step=0; kanbanBarcode=null; kanbanPart=null; expectedQty=null;
+  labelPart=null; labelQty=null; labelProductCode=null; currentResult=null;
+  updateDisplay();
+  document.getElementById('result-banner').classList.add('hidden');
+  document.getElementById('result-banner').classList.remove('anim-pulse');
+  document.getElementById('part-match-box').classList.add('hidden');
+  updateStatus('IDLE','#94a3b8');
+  document.getElementById('scan-input').value='';
+  document.getElementById('scan-input').focus();
+}
+function resetAll() { resetStep(); }
+
+function showToast(msg, type) {
+  var t = document.createElement('div');
+  t.className='fixed top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-sm font-semibold z-50 anim-slide shadow-lg border';
+  t.style.backgroundColor=type==='error'?'#7f1d1d':type==='success'?'#166534':'#0284c7';
+  t.style.borderColor=type==='error'?'#f87171':type==='success'?'#4ade80':'#38bdf8';
+  t.style.color='#fff'; t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); },2500);
+}
+
+// ===== DOCK helper — lookup จาก orderLimits.customer เหมือนหน้า Scan =====
+function getDockFromRecord(r) {
+  var part = r.kanban_part || r.label_part || '';
+
+  // 1) lookup ตรงๆ จาก orderLimits ใช้ customer field เหมือนหน้า Scan
+  if (part && orderLimits[part]) {
+    return (orderLimits[part].customer || '').trim() || orderLimits[part].type || 'OTHER';
+  }
+
+  // 2) MATCO: แปลง converted code กลับเป็น part no. จริง แล้ว lookup
+  var origPart = getMatcoOriginalPart(part);
+  if (origPart !== part && orderLimits[origPart]) {
+    return (orderLimits[origPart].customer || '').trim() || 'MATCO';
+  }
+  if (matcoMapping[part]) return 'MATCO';
+
+  // 3) ลอง label_part ด้วย
+  var lp = r.label_part || '';
+  if (lp && lp !== part && orderLimits[lp]) {
+    return (orderLimits[lp].customer || '').trim() || orderLimits[lp].type || 'OTHER';
+  }
+
+  // 4) fallback: ใช้ job_type (ตัด suffix เช่น [DUPLICATE_LABEL])
+  if (r.job_type && r.job_type !== 'N/A') return r.job_type.replace(/\s*\[.*\]/, '').trim();
+
+  return 'OTHER';
+}
+
+// ===== STICKY PROGRESS BAR — โชว์ทุก dock โดยไม่ต้องเลือก job type =====
+function renderStickyProgress() {
+  var bar  = document.getElementById('sticky-progress');
+  var keys = Object.keys(orderLimits);
+
+  if (!selectedShippingDate || keys.length === 0) {
+    bar.classList.add('hidden'); return;
+  }
+
+  bar.classList.remove('hidden');
+  document.getElementById('sp-date').textContent = selectedShippingDate;
+
+  // รวม overall
+  var totalQty = 0, totalScanned = 0;
+
+  // แยกตาม type: MATCO, Milk-Run, Honda
+  var byType = { 'MATCO': { qty:0, scanned:0 }, 'Milk-Run': { qty:0, scanned:0 }, 'Honda': { qty:0, scanned:0 } };
+  var missingParts = [];
+
+  keys.forEach(function(k) {
+    var e = orderLimits[k];
+    var t = e.type || 'Other';
+    totalQty     += (e.qty     || 0);
+    totalScanned += (e.scanned || 0);
+    if (byType[t]) {
+      byType[t].qty     += (e.qty     || 0);
+      byType[t].scanned += (e.scanned || 0);
+    }
+    var remain = (e.qty || 0) - (e.scanned || 0);
+    if (remain > 0) missingParts.push({ part: k, remain: remain, type: t });
+  });
+
+  // overall bar
+  var pct = totalQty > 0 ? Math.min(Math.round((totalScanned / totalQty) * 100), 100) : 0;
+  var isDone = totalScanned >= totalQty && totalQty > 0;
+  var isOver = totalScanned > totalQty  && totalQty > 0;
+  var barColor = isOver ? '#ef4444' : isDone ? '#22c55e' : pct >= 80 ? '#fbbf24' : '#38bdf8';
+
+  document.getElementById('sp-numbers').textContent = totalScanned + ' / ' + totalQty + ' pcs';
+  document.getElementById('sp-bar').style.width = pct + '%';
+  document.getElementById('sp-bar').style.backgroundColor = barColor;
+
+  // แถบแยกรายประเภท
+  var typeRowsEl = document.getElementById('sp-type-rows');
+  var typeHtml = '';
+  ['MATCO','Milk-Run','Honda'].forEach(function(t) {
+    var d = byType[t];
+    if (d.qty === 0) return;
+    var tp = d.qty > 0 ? Math.min(Math.round((d.scanned / d.qty) * 100), 100) : 0;
+    var tDone = d.scanned >= d.qty;
+    var tOver = d.scanned > d.qty;
+    var tColor = tOver ? '#ef4444' : tDone ? '#22c55e' : '#38bdf8';
+    var dotColor = t === 'MATCO' ? '#a855f7' : t === 'Honda' ? '#f59e0b' : '#3b82f6';
+    typeHtml +=
+      '<div class="bg-[#1a2538] rounded-lg px-2 py-1.5">' +
+        '<div class="flex items-center justify-between mb-1">' +
+          '<div class="flex items-center gap-1">' +
+            '<div class="w-1.5 h-1.5 rounded-full" style="background:' + dotColor + '"></div>' +
+            '<span class="text-[9px] font-bold text-[#94a3b8] uppercase">' + t + '</span>' +
+          '</div>' +
+          '<span class="mono text-[9px] font-bold" style="color:' + tColor + '">' + d.scanned + '/' + d.qty + '</span>' +
+        '</div>' +
+        '<div class="w-full bg-[#0a1120] rounded-full h-1 overflow-hidden">' +
+          '<div class="h-1 rounded-full transition-all" style="width:' + tp + '%;background:' + tColor + '"></div>' +
+        '</div>' +
+      '</div>';
+  });
+  typeRowsEl.innerHTML = typeHtml;
+
+  // missing badges — แยกสี MATCO vs Milk-Run
+  var missingEl = document.getElementById('sp-missing');
+  if (isDone || isOver || missingParts.length === 0) {
+    missingEl.classList.add('hidden'); missingEl.innerHTML = '';
+  } else {
+    var show = missingParts.slice(0, 8);
+    var more = missingParts.length - show.length;
+    missingEl.innerHTML = show.map(function(p) {
+      var bc = p.type === 'MATCO' ? '#a855f7' : '#3b82f6';
+      return '<span class="inline-flex items-center gap-1 rounded px-2 py-0.5 border" style="background:' + bc + '18;border-color:' + bc + '44">' +
+               '<span class="mono text-[9px] text-[#cbd5e1]">' + p.part + '</span>' +
+               '<span class="text-[9px] font-bold text-[#fca5a5]">-' + p.remain + '</span>' +
+             '</span>';
+    }).join('') + (more > 0 ? '<span class="text-[9px] text-[#4a5a72]">+' + more + ' more</span>' : '');
+    missingEl.classList.remove('hidden');
+  }
+}
+
+// ===== ORDER SUMMARY =====
+function renderOrderSummary() {
+  var section = document.getElementById('order-summary-section');
+  var list = document.getElementById('order-summary-list');
+  var keys = Object.keys(orderLimits);
+  if (!selectedShippingDate || keys.length===0) { section.classList.add('hidden'); return; }
+  section.classList.remove('hidden');
+  document.getElementById('order-summary-date').textContent = selectedShippingDate;
+
+  var grouped = { 'Milk-Run':{}, 'MATCO':{}, 'Honda':{} };
+  keys.forEach(function(k) {
+    var e = orderLimits[k];
+    var type = e.type||'Other';
+    var cust = (e.customer||'ไม่ระบุ').trim();
+    if (!grouped[type]) grouped[type]={};
+    if (!grouped[type][cust]) grouped[type][cust]=[];
+    grouped[type][cust].push({ part:k, limit:e.qty||0, scanned:e.scanned||0 });
+  });
+
+  function getPartRecords(partKey) {
+    return logRecords.filter(function(r) {
+      if (!isSameShippingDate(r.shipping_date, selectedShippingDate)) return false;
+      return r.kanban_part === partKey;
+    }).sort(function(a,b){ return new Date(b.timestamp)-new Date(a.timestamp); });
+  }
+
+  function buildPartBlock(item) {
+    var percent = item.limit>0 ? Math.min(Math.round((item.scanned/item.limit)*100),100) : 0;
+    var isOver  = item.scanned > item.limit && item.limit > 0;
+    var isDone  = item.scanned >= item.limit && item.limit > 0;
+    var barC    = isOver?'#ef4444':isDone?'#22c55e':'#38bdf8';
+    var textC   = isOver?'#f87171':isDone?'#86efac':'#60a5fa';
+    var badge   = isOver?'OVER':isDone?'DONE':'RUN';
+    // ===== FIX: ใช้ data attribute แทน inline onclick string เพื่อป้องกัน escape issue =====
+    var did     = 'detail-' + item.part.replace(/[^a-zA-Z0-9]/g,'-');
+    var records = getPartRecords(item.part);
+    var detailHtml = '';
+    if (records.length === 0) {
+      detailHtml = '<div class="text-[10px] text-[#4a5a72] text-center py-3">ยังไม่มีการสแกน</div>';
+    } else {
+      records.forEach(function(r) {
+        var rc = r.result==='PASS' ? '#22c55e' : '#ef4444';
+        detailHtml +=
+          '<div class="border-b border-[#1a2538] last:border-0 py-2.5">' +
+            '<div class="flex items-center justify-between mb-1.5">' +
+              '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded" style="background:'+rc+'22;color:'+rc+'">'+r.result+'</span>' +
+              '<span class="mono text-[9px] text-[#4a5a72]">'+formatDateTime(r.timestamp)+'</span>' +
+            '</div>' +
+            '<div class="space-y-0.5 text-[11px]">' +
+              '<div class="flex gap-2"><span class="text-[#4a5a72] w-10 shrink-0">Part:</span><span class="mono text-[#cbd5e1] font-semibold">'+(r.kanban_part||'-')+'</span></div>' +
+              '<div class="flex gap-2"><span class="text-[#4a5a72] w-10 shrink-0">Qty:</span><span class="mono font-bold" style="color:'+rc+'">'+(r.label_qty||0)+' pcs</span></div>' +
+              '<div class="flex gap-2"><span class="text-[#4a5a72] w-10 shrink-0">Label:</span><span class="mono text-[#86efac]">'+(r.label_product_code||r.label_part||'-')+'</span></div>' +
+            '</div>' +
+          '</div>';
+      });
+    }
+    return '' +
+      '<div class="mb-3">' +
+        '<button data-toggle-id="' + did + '" class="toggle-detail-btn w-full text-left focus:outline-none">' +
+          '<div class="flex items-center justify-between mb-1">' +
+            '<div class="flex items-center gap-2 flex-1 min-w-0">' +
+              '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background:'+barC+'22;color:'+barC+'">'+badge+'</span>' +
+              '<span class="mono text-[11px] text-[#cbd5e1] font-semibold truncate">'+item.part+'</span>' +
+            '</div>' +
+            '<div class="flex items-center gap-2 shrink-0 ml-2">' +
+              '<span class="mono text-[11px] font-bold" style="color:'+textC+'">'+item.scanned+'/'+item.limit+'</span>' +
+              '<i data-lucide="chevron-down" id="chv-'+did+'" style="width:12px;height:12px;color:#4a5a72;transition:transform 0.2s"></i>' +
+            '</div>' +
+          '</div>' +
+          '<div class="w-full bg-[#0a1120] rounded-full h-1.5 overflow-hidden">' +
+            '<div class="h-1.5 rounded-full transition-all duration-500" style="width:'+percent+'%;background-color:'+barC+'"></div>' +
+          '</div>' +
+          '<div class="text-right text-[9px] mt-0.5" style="color:'+textC+'">'+percent+'%</div>' +
+        '</button>' +
+        '<div id="'+did+'" class="hidden mt-2 bg-[#0a1120] border border-[#1a2538] rounded-lg px-3 py-2">' +
+          '<div class="text-[9px] text-[#4a5a72] uppercase tracking-wider mb-1 font-bold border-b border-[#1a2538] pb-1.5">รายการสแกน ('+records.length+')</div>' +
+          detailHtml +
+        '</div>' +
+      '</div>';
+  }
+
+  function buildCustomerBlock(cust, partsArr) {
+    partsArr.sort(function(a,b){ return a.part.localeCompare(b.part); });
+    var html = '<div class="bg-[#0f1724] rounded-lg p-3 border border-[#2a3a52] mb-2">';
+    html += '<div class="flex items-center justify-between mb-3 pb-2 border-b border-[#1a2538]">';
+    html += '<span class="text-xs font-bold text-[#e2e8f0] uppercase tracking-wide">'+cust+'</span>';
+    html += '<span class="text-[10px] bg-[#1a2538] text-[#38bdf8] px-2 py-0.5 rounded font-bold">'+partsArr.length+' items</span>';
+    html += '</div>';
+    partsArr.forEach(function(item){ html += buildPartBlock(item); });
+    html += '</div>';
+    return html;
+  }
+
+  var html = '';
+  ['Milk-Run','MATCO'].forEach(function(type) {
+    var customers = Object.keys(grouped[type]||{}).sort();
+    if (!customers.length) return;
+    var dotC = type==='Milk-Run'?'#3b82f6':'#a855f7';
+    html += '<div class="flex items-center gap-2 mt-3 mb-2 first:mt-0">' +
+              '<div class="w-2 h-2 rounded-full" style="background:'+dotC+'"></div>' +
+              '<span class="text-[10px] text-[#94a3b8] uppercase tracking-widest font-bold">'+type+'</span>' +
+            '</div>';
+    customers.forEach(function(cust){ html += buildCustomerBlock(cust, grouped[type][cust]); });
+  });
+
+  list.innerHTML = html;
+
+  // ===== FIX: ผูก event listener หลัง innerHTML set เสร็จ แทน inline onclick =====
+  list.querySelectorAll('.toggle-detail-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      toggleDetail(this.getAttribute('data-toggle-id'));
+    });
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function toggleDetail(id) {
+  var el = document.getElementById(id);
+  var chv = document.getElementById('chv-'+id);
+  if (!el) return;
+  var hidden = el.classList.toggle('hidden');
+  if (chv) chv.style.transform = hidden?'rotate(0deg)':'rotate(180deg)';
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  ['scan','history','report'].forEach(function(t){ document.getElementById('tab-'+t).classList.toggle('hidden',t!==tab); });
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    var a = btn.dataset.tab===tab;
+    btn.style.color = a?'#38bdf8':'#e2e8f0';
+    btn.style.borderBottomColor = a?'#38bdf8':'transparent';
+  });
+}
+
+// ===== HISTORY =====
+function renderHistory() {
+  var list  = document.getElementById('history-list');
+  var empty = document.getElementById('history-empty');
+  var filtered = logRecords.slice();
+  if (historyResultFilter !== 'all') filtered = filtered.filter(function(r){ return r.result === historyResultFilter; });
+  if (historyDateFilter)  filtered = filtered.filter(function(r){ return r.timestamp && getFormatYMD(r.timestamp) === historyDateFilter; });
+  if (historyDockFilter)  filtered = filtered.filter(function(r){ return getDockFromRecord(r) === historyDockFilter; });
+  if (historyPartFilter) {
+    var pf = historyPartFilter.toLowerCase();
+    filtered = filtered.filter(function(r) {
+      return (r.kanban_part && r.kanban_part.toLowerCase().includes(pf)) ||
+             (r.label_part  && r.label_part.toLowerCase().includes(pf));
+    });
+  }
+  filtered.sort(function(a,b){ return new Date(b.timestamp) - new Date(a.timestamp); });
+
+  document.getElementById('history-summary-total').textContent = filtered.length;
+  document.getElementById('history-summary-pass').textContent  = filtered.filter(function(r){ return r.result==='PASS'; }).length;
+  document.getElementById('history-summary-fail').textContent  = filtered.filter(function(r){ return r.result==='FAIL'; }).length;
+
+  if (filtered.length === 0) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  var byDay = {};
+  filtered.forEach(function(r) {
+    var day = r.timestamp ? getFormatYMD(r.timestamp) : 'unknown';
+    if (!byDay[day]) byDay[day] = [];
+    byDay[day].push(r);
+  });
+  var dayKeys = Object.keys(byDay).sort(function(a,b){ return b.localeCompare(a); });
+  var html = '';
+  dayKeys.forEach(function(day) {
+    var recs = byDay[day];
+    var pass = recs.filter(function(r){ return r.result==='PASS'; }).length;
+    var fail = recs.length - pass;
+    var totalQty = recs.filter(function(r){ return r.result==='PASS'; }).reduce(function(s,r){ return s+(parseInt(r.label_qty)||0); },0);
+    html += '<div class="mb-5">';
+    html += '<div class="flex items-center gap-2 mb-3">';
+    html += '<div class="bg-[#1a2538] border border-[#2a3a52] rounded-lg px-3 py-1.5 flex items-center gap-3 flex-wrap">';
+    html += '<span class="text-xs font-bold text-[#38bdf8] mono">'+formatDate(day+'T00:00:00')+'</span>';
+    html += '<span class="text-[10px] text-[#60a5fa]">'+recs.length+' scans</span>';
+    html += '<span class="text-[10px] text-[#86efac]">PASS: '+pass+'</span>';
+    html += '<span class="text-[10px] text-[#fca5a5]">FAIL: '+fail+'</span>';
+    html += '<span class="text-[10px] text-[#94a3b8]">'+totalQty+' pcs</span>';
+    html += '</div></div>';
+    html += '<div class="relative pl-5">';
+    html += '<div class="absolute left-2 top-0 bottom-0 w-px bg-[#2a3a52]"></div>';
+    recs.forEach(function(r) {
+      var rc   = r.result==='PASS' ? '#22c55e' : '#ef4444';
+      var dock = getDockFromRecord(r);
+      var dockColor = dock === 'MATCO' ? '#a855f7' : '#3b82f6';
+      html += '<div class="relative mb-2">';
+      html += '<div class="absolute -left-3 top-3 w-3 h-3 rounded-full border-2 border-[#1a2538]" style="background:'+rc+'"></div>';
+      html += '<div class="bg-[#0f1724] rounded-lg p-3 border border-[#2a3a52] ml-1">';
+      html += '<div class="flex items-center justify-between mb-2">';
+      html += '<div class="flex items-center gap-1.5 flex-wrap">';
+      html += '<span class="text-xs font-bold" style="color:'+rc+'">'+r.result+'</span>';
+      html += '<span class="text-[10px] px-1.5 py-0.5 rounded font-bold" style="background:'+dockColor+'22;color:'+dockColor+'">'+dock+'</span>';
+      html += '<span class="text-[10px] bg-[#1a2538] text-[#94a3b8] px-1.5 py-0.5 rounded">'+(r.job_type||'-')+'</span>';
+      html += '</div>';
+      html += '<span class="mono text-[10px] text-[#4a5a72]">'+formatDateTime(r.timestamp)+'</span>';
+      html += '</div>';
+      html += '<div class="space-y-0.5 text-[11px]">';
+      html += '<div class="flex gap-2"><span class="text-[#4a5a72] w-12 shrink-0">Part:</span><span class="mono text-[#cbd5e1] font-semibold">'+(r.kanban_part||'-')+'</span></div>';
+      html += '<div class="flex gap-2"><span class="text-[#4a5a72] w-12 shrink-0">Qty:</span><span class="mono font-bold" style="color:'+rc+'">'+(r.label_qty||0)+' pcs</span></div>';
+      html += '<div class="flex gap-2"><span class="text-[#4a5a72] w-12 shrink-0">Label:</span><span class="mono text-[#86efac]">'+(r.label_product_code||r.label_part||'-')+'</span></div>';
+      html += '<div class="flex gap-2"><span class="text-[#4a5a72] w-12 shrink-0">Ship:</span><span class="mono text-[#60a5fa]">'+(r.shipping_date ? formatDate(r.shipping_date.includes('T') ? r.shipping_date : r.shipping_date+'T00:00:00') : '-')+'</span></div>';
+      html += '</div></div></div>';
+    });
+    html += '</div></div>';
+  });
+  list.innerHTML = html;
+}
+
+// ===== History: part filter + dock filter + autocomplete =====
+var historyPartFilter = '';
+var historyDockFilter = '';
+
+// populate dock dropdown จาก logRecords
+function populateDockOptions() {
+  var sel = document.getElementById('history-dock-filter');
+  var cur = sel.value;
+  var docks = {};
+  logRecords.forEach(function(r) { docks[getDockFromRecord(r)] = true; });
+  var opts = Object.keys(docks).sort();
+  sel.innerHTML = '<option value="">ทั้งหมด</option>';
+  opts.forEach(function(d) {
+    var o = document.createElement('option');
+    o.value = d; o.textContent = d;
+    if (d === cur) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+function filterHistory() {
+  historyResultFilter = document.getElementById('history-result-filter').value;
+  historyDockFilter   = document.getElementById('history-dock-filter').value || '';
+  historyPartFilter   = (document.getElementById('history-part-filter').value || '').trim().toLowerCase();
+  updatePartSuggestions();
+  renderHistory();
+}
+
+// ===== FIX: updatePartSuggestions — ใช้ createElement แทน innerHTML string injection =====
+function updatePartSuggestions() {
+  var input = document.getElementById('history-part-filter').value.trim().toLowerCase();
+  var box   = document.getElementById('part-suggestions');
+  if (!input) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+
+  var parts = {};
+  logRecords.forEach(function(r) {
+    if (r.kanban_part && r.kanban_part !== 'N/A') parts[r.kanban_part] = true;
+    if (r.label_part  && r.label_part  !== 'N/A') parts[r.label_part]  = true;
+  });
+
+  var matches = Object.keys(parts)
+    .filter(function(p) { return p.toLowerCase().includes(input); })
+    .sort()
+    .slice(0, 8);
+
+  if (!matches.length) { box.classList.add('hidden'); return; }
+
+  box.innerHTML = '';
+  matches.forEach(function(p) {
+    var btn = document.createElement('button');
+    btn.className = 'w-full text-left px-3 py-2 text-xs mono text-[#e2e8f0] hover:bg-[#2a3a52] border-b border-[#1a2538] last:border-0';
+    btn.textContent = p;
+    btn.addEventListener('click', function() { selectPartFilter(p); });
+    box.appendChild(btn);
+  });
+  box.classList.remove('hidden');
+}
+
+function selectPartFilter(part) {
+  document.getElementById('history-part-filter').value = part;
+  document.getElementById('part-suggestions').classList.add('hidden');
+  historyPartFilter = part.toLowerCase();
+  renderHistory();
+}
+
+function clearHistoryFilters() {
+  document.getElementById('history-date-picker').value   = '';
+  document.getElementById('history-result-filter').value = 'all';
+  document.getElementById('history-dock-filter').value   = '';
+  document.getElementById('history-part-filter').value   = '';
+  document.getElementById('part-suggestions').classList.add('hidden');
+  historyResultFilter = 'all'; historyDateFilter = null;
+  historyDockFilter = ''; historyPartFilter = '';
+  renderHistory();
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#history-part-filter') && !e.target.closest('#part-suggestions')) {
+    document.getElementById('part-suggestions').classList.add('hidden');
+  }
+});
+
+// ===== REPORT — Stacked by Dock =====
+var CHART_PALETTE = [
+  '#38bdf8','#818cf8','#34d399','#fb923c','#f472b6',
+  '#a78bfa','#facc15','#4ade80','#60a5fa','#f87171',
+  '#2dd4bf','#c084fc','#fbbf24','#86efac','#93c5fd'
+];
+
+function updateReport() {
+  var total = logRecords.length;
+  var pass  = logRecords.filter(function(r){ return r.result==='PASS'; }).length;
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-pass').textContent  = pass;
+  document.getElementById('stat-fail').textContent  = total - pass;
+
+  // group key = Dock (OB, OE, D1, MATCO ฯลฯ) แทนรายพาร์ท
+  function buildStackedChart(canvasId, reportId, getDateKey, oldChart) {
+    var passRecs = logRecords.filter(function(r){ return r.result==='PASS' && r.timestamp; });
+
+    var dateSet = {}, dockSet = {};
+    passRecs.forEach(function(r) {
+      var dk   = getDateKey(r);
+      var dock = getDockFromRecord(r);
+      dateSet[dk]   = true;
+      dockSet[dock] = true;
+    });
+
+    var dates = Object.keys(dateSet).sort();
+    var docks = Object.keys(dockSet).sort();
+
+    if (!dates.length) {
+      if (oldChart) oldChart.destroy();
+      document.getElementById(reportId).innerHTML = '<div class="text-xs text-[#4a5a72]">ไม่มีข้อมูล</div>';
+      return null;
+    }
+
+    var matrix = {};
+    docks.forEach(function(d){ matrix[d] = {}; dates.forEach(function(dt){ matrix[d][dt] = 0; }); });
+    passRecs.forEach(function(r) {
+      var dk   = getDateKey(r);
+      var dock = getDockFromRecord(r);
+      matrix[dock][dk] += (parseInt(r.label_qty) || 0);
+    });
+
+    var datasets = docks.map(function(d, i) {
+      return {
+        label: d,
+        data:  dates.map(function(dt){ return matrix[d][dt]; }),
+        backgroundColor: CHART_PALETTE[i % CHART_PALETTE.length],
+        borderRadius: 3,
+        borderSkipped: false
+      };
+    });
+
+    if (oldChart) oldChart.destroy();
+    var nc = new Chart(document.getElementById(canvasId), {
+      type: 'bar',
+      data: { labels: dates, datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true, position: 'bottom',
+            labels: { color:'#94a3b8', font:{ size:9 }, boxWidth:10, padding:8 }
+          },
+          tooltip: {
+            callbacks: { label: function(ctx){ return ctx.dataset.label + ': ' + ctx.parsed.y + ' pcs'; } }
+          }
+        },
+        scales: {
+          x: { stacked:true, ticks:{ color:'#94a3b8', font:{ size:9 } }, grid:{ color:'#1a2538' } },
+          y: { stacked:true, ticks:{ color:'#94a3b8', font:{ size:9 } }, grid:{ color:'#2a3a52' },
+               title:{ display:true, text:'pcs', color:'#4a5a72', font:{ size:9 } } }
+        }
+      }
+    });
+
+    var totalByDate = {};
+    dates.forEach(function(dt){
+      totalByDate[dt] = docks.reduce(function(s,d){ return s + (matrix[d][dt]||0); }, 0);
+    });
+    document.getElementById(reportId).innerHTML = dates.map(function(dt) {
+      var activeDocks = docks.filter(function(d){ return matrix[d][dt] > 0; });
+      return '<div class="bg-[#0f1724] rounded-lg p-2 border border-[#2a3a52]">' +
+        '<div class="flex items-center justify-between mb-1">' +
+          '<span class="mono text-[10px] font-bold text-[#38bdf8]">'+dt+'</span>' +
+          '<span class="text-[10px] font-bold text-[#e2e8f0]">'+totalByDate[dt]+' pcs</span>' +
+        '</div>' +
+        '<div class="flex flex-wrap gap-1">' +
+          activeDocks.map(function(d) {
+            var col = CHART_PALETTE[docks.indexOf(d) % CHART_PALETTE.length];
+            return '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono" style="background:'+col+'22;color:'+col+';border:1px solid '+col+'44">'+d+' <b>'+matrix[d][dt]+'</b></span>';
+          }).join('') +
+        '</div></div>';
+    }).join('');
+
+    return nc;
+  }
+
+  chartByDate  = buildStackedChart('chart-by-date',  'report-by-date',
+    function(r){ return formatDate(r.timestamp); }, chartByDate);
+  chartByMonth = buildStackedChart('chart-by-month', 'report-by-month',
+    function(r){ var d=new Date(r.timestamp); return String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear(); }, chartByMonth);
+}
+
+// ===== CALENDAR =====
+var calendarCurrentDate=new Date();
+function initCalendar() {
+  var input=document.getElementById('history-date-picker');
+  input.addEventListener('click',function(e){ e.stopPropagation(); document.getElementById('calendar-popup').classList.toggle('hidden'); renderCalendar(); });
+  document.addEventListener('click',function(e){ if(!e.target.closest('#history-date-picker')&&!e.target.closest('#calendar-popup')) document.getElementById('calendar-popup').classList.add('hidden'); });
+}
+function renderCalendar() {
+  var year=calendarCurrentDate.getFullYear(),month=calendarCurrentDate.getMonth();
+  var last=new Date(year,month+1,0).getDate(),first=new Date(year,month,1).getDay();
+  var names=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('cal-month-year').textContent=names[month]+' '+year;
+  var c=document.getElementById('cal-days'); c.innerHTML='';
+  for(var i=0;i<first;i++) c.appendChild(document.createElement('div'));
+  for(var day=1;day<=last;day++){
+    var ds=year+'-'+String(month+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+    var btn=document.createElement('button');
+    btn.className=historyDateFilter===ds?'bg-[#38bdf8] text-[#0f1724] rounded text-xs py-1 font-bold':'bg-[#2a3a52] hover:bg-[#38bdf8] text-[#e2e8f0] rounded text-xs py-1 transition-colors font-semibold';
+    btn.textContent=day;
+    (function(d){ btn.addEventListener('click',function(e){ e.preventDefault(); selectDate(d); document.getElementById('calendar-popup').classList.add('hidden'); }); })(ds);
+    c.appendChild(btn);
+  }
+}
+function selectDate(ds) {
+  historyDateFilter=ds;
+  document.getElementById('history-date-picker').value=formatDate(ds+'T00:00:00');
+  renderHistory();
+}
+function calPrevMonth(){ calendarCurrentDate.setMonth(calendarCurrentDate.getMonth()-1); renderCalendar(); }
+function calNextMonth(){ calendarCurrentDate.setMonth(calendarCurrentDate.getMonth()+1); renderCalendar(); }
+
+document.getElementById('scan-input').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); handleScan(); } });
+
+window.onload = function(){
+  try { initCalendar(); } catch(e) { console.error('initCalendar error:', e); }
+  try { if(window.lucide) lucide.createIcons(); } catch(e) { console.error('lucide error:', e); }
+  try { restoreState(); } catch(e) { console.error('restoreState error:', e); }
+  try { loadDataFromGoogleSheet(true); } catch(e) { console.error('loadData error:', e); hideOverlay(); }
+
+  setInterval(function(){
+    try { loadDataFromGoogleSheet(false); } catch(e) { console.error('poll error:', e); }
+  }, 30000);
+
+  document.addEventListener('visibilitychange', function(){
+    if (!document.hidden) {
+      try { loadDataFromGoogleSheet(true); } catch(e) { console.error('visibility error:', e); }
+    }
+  });
+};
+  </script>
+ </body>
+</html>
